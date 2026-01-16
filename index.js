@@ -50,15 +50,14 @@ app.post("/calculate-drone", async (req, res) => {
 
     const key = `session:${sessionId}`;
 
-    // ✅ แก้จุดที่ 1: เก็บ observer เป็น object ตรง ๆ
+    // เก็บ observer
     await redis.rpush(key, JSON.stringify(observer));
 
-
+    // ดึง observer ทั้งหมด
     const rawList = await redis.lrange(key, 0, -1);
-
     console.log("RAW FROM REDIS =", rawList);
-    console.log("RAW TYPE =", rawList.map(v => typeof v));
 
+    // ยังไม่ครบ 2 เครื่อง
     if (rawList.length < 2) {
       return res.json({
         status: "waiting",
@@ -66,48 +65,25 @@ app.post("/calculate-drone", async (req, res) => {
       });
     }
 
-    const observer1 = JSON.parse(rawList[0]);
-    const observer2 = JSON.parse(rawList[1]);
-
-
-    // ❗️ parse หลังจาก log เท่านั้น
-    const o1 = JSON.parse(raw[0]);
-    const o2 = JSON.parse(raw[1]);
-
-
-
-
-
-
-
-    // ยังไม่ครบ 2 เครื่อง
-    if (count < 2) {
-      return res.status(200).json({
-        status: "waiting",
-        drone: null,
-        message: "Waiting for another observer",
-      });
-    }
-
-    // ครบ 2 เครื่อง → ดึง observer
-    // const raw = await redis.lrange(key, 0, 1);
-    // const o1 = JSON.parse(raw[0]);
-    // const o2 = JSON.parse(raw[1]);
+    // parse แค่ครั้งเดียว
+    const o1 = JSON.parse(rawList[0]);
+    const o2 = JSON.parse(rawList[1]);
 
     const drone = calculateDroneFromTwoObservers(o1, o2);
 
     // ล้าง session
     await redis.del(key);
 
-    return res.status(200).json({
+    return res.json({
       status: "calculated",
       drone,
     });
+
   } catch (err) {
     console.error("❌ ERROR", err);
     return res.status(500).json({
       status: "error",
-      message: "Internal server error",
+      message: err.message,
     });
   }
 });
