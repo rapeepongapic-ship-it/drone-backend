@@ -6,7 +6,6 @@ const { Redis } = require("@upstash/redis");
 const express = require("express");
 const cors = require("cors");
 
-
 const app = express();
 const PORT = 3000;
 
@@ -20,7 +19,6 @@ const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
-
 
 // ================================
 // 3. CALCULATION FUNCTION
@@ -52,8 +50,8 @@ app.post("/calculate-drone", async (req, res) => {
 
     const key = `session:${sessionId}`;
 
-    // เก็บ observer ลง Redis
-    await redis.rpush(key, JSON.stringify(observer));
+    // ✅ แก้จุดที่ 1: เก็บ observer เป็น object ตรง ๆ
+    await redis.rpush(key, observer);
 
     const count = await redis.llen(key);
     console.log(`[${sessionId}] observers =`, count);
@@ -68,13 +66,11 @@ app.post("/calculate-drone", async (req, res) => {
     }
 
     // ครบ 2 เครื่อง → ดึง observer
-    const [o1Raw, o2Raw] = await redis.lrange(key, 0, 1);
-    const o1 = JSON.parse(o1Raw);
-    const o2 = JSON.parse(o2Raw);
+    const [o1, o2] = await redis.lrange(key, 0, 1);
 
     const drone = calculateDroneFromTwoObservers(o1, o2);
 
-    // ล้าง session (สำคัญ)
+    // ล้าง session
     await redis.del(key);
 
     return res.status(200).json({
