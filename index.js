@@ -1,152 +1,98 @@
-const express = require('express')
-const bodyParser = require('body-parser')
-const app = express()
+// ================================
+// 1. IMPORT & APP SETUP
+// ================================
+require("dotenv").config();
+const { Redis } = require("@upstash/redis");
+const express = require("express");
+const cors = require("cors");
 
-app.use(bodyParser.json())
 
-const PORT = 3000
+const app = express();
+const PORT = 3000;
 
-// ============================
-// session storage (ของเดิม)
-// ============================
-const sessions = {}
+app.use(cors());
+app.use(express.json());
 
-// ============================
-// API
-// ============================
-app.post('/calculate-drone', (req, res) => {
+// ================================
+// 1.1 REDIS SETUP (Upstash)
+// ================================
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
 
-  /**
-   * =====================================================
-   * ✅ NEW: รองรับ Android (observer1 + observer2 มาพร้อมกัน)
-   * =====================================================
-   */
-  if (req.body.observer1 && req.body.observer2) {
-    const o1 = req.body.observer1
-    const o2 = req.body.observer2
 
-    // validate angle opposite
-    const angleDiff = Math.abs(
-      ((o1.degree - o2.degree + 540) % 360) - 180
-    )
-
-    if (angleDiff < 1) {
-      return res.status(400).json({
-        error: 'Bearings are opposite (180°)'
-      })
-    }
-
-    const result = intersectLines(
-      { lat: o1.lat, lng: o1.lng },
-      o1.degree,
-      { lat: o2.lat, lng: o2.lng },
-      o2.degree
-    )
-
-    if (!result) {
-      return res.status(400).json({
-        error: 'Bearings are parallel or do not intersect'
-      })
-    }
-
-    return res.json({
-      status: 'calculated',
-      drone: result
-    })
-  }
-
-  /**
-   * =====================================================
-   * ⬇️ LOGIC เดิม (session-based) ❌ ไม่ลบ ❌ ไม่แก้
-   * =====================================================
-   */
-  const { sessionId, observer } = req.body
-
-  if (!sessionId || !observer) {
-    return res.status(400).json({
-      error: 'Missing sessionId or observer'
-    })
-  }
-
-  if (!sessions[sessionId]) {
-    sessions[sessionId] = []
-  }
-
-  sessions[sessionId].push(observer)
-
-  if (sessions[sessionId].length < 2) {
-    return res.json({
-      status: 'waiting',
-      message: 'Waiting for another observer'
-    })
-  }
-
-  const [o1, o2] = sessions[sessionId]
-
-  // validate มุมตรงข้าม
-  const angleDiff = Math.abs(
-    ((o1.degree - o2.degree + 540) % 360) - 180
-  )
-
-  if (angleDiff < 1) {
-    delete sessions[sessionId]
-    return res.status(400).json({
-      error: 'Bearings are opposite (180°)'
-    })
-  }
-
-  const result = intersectLines(
-    { lat: o1.lat, lng: o1.lng },
-    o1.degree,
-    { lat: o2.lat, lng: o2.lng },
-    o2.degree
-  )
-
-  delete sessions[sessionId]
-
-  if (!result) {
-    return res.status(400).json({
-      error: 'Bearings are parallel or do not intersect'
-    })
-  }
-
-  res.json({
-    status: 'calculated',
-    drone: result
-  })
-})
-
-// ============================
-// Geometry core (ของเดิม)
-// ============================
-function intersectLines(p1, bearing1, p2, bearing2) {
-  const toRad = deg => deg * Math.PI / 180
-
-  const θ1 = toRad(bearing1)
-  const θ2 = toRad(bearing2)
-
-  const x1 = p1.lng
-  const y1 = p1.lat
-  const x2 = p2.lng
-  const y2 = p2.lat
-
-  const dx1 = Math.sin(θ1)
-  const dy1 = Math.cos(θ1)
-  const dx2 = Math.sin(θ2)
-  const dy2 = Math.cos(θ2)
-
-  const det = dx1 * dy2 - dy1 * dx2
-  if (Math.abs(det) < 1e-6) return null
-
-  const t = ((x2 - x1) * dy2 - (y2 - y1) * dx2) / det
-
+// ================================
+// 3. CALCULATION FUNCTION
+// ================================
+function calculateDroneFromTwoObservers(o1, o2) {
+  // NOTE: ตอนนี้ใช้ midpoint (ทดสอบ logic ก่อน)
   return {
-    lat: y1 + t * dy1,
-    lng: x1 + t * dx1
-  }
+    lat: (o1.lat + o2.lat) / 2,
+    lng: (o1.lng + o2.lng) / 2,
+  };
 }
 
-// ============================
+// ================================
+// 4. API ENDPOINT
+// ================================
+app.post("/calculate-drone", async (req, res) => {
+  console.log("📡 HIT /calculate-drone");
+  console.log("BODY =", req.body);
+
+  try {
+    const { sessionId, observer } = req.body;
+
+    if (!sessionId || !observer) {
+      return res.status(400).json({
+        status: "error",
+        message: "Missing sessionId or observer",
+      });
+    }
+
+    const key = `session:${sessionId}`;
+
+    // เก็บ observer ลง Redis
+    await redis.rpush(key, JSON.stringify(observer));
+
+    const count = await redis.llen(key);
+    console.log(`[${sessionId}] observers =`, count);
+
+    // ยังไม่ครบ 2 เครื่อง
+    if (count < 2) {
+      return res.status(200).json({
+        status: "waiting",
+        drone: null,
+        message: "Waiting for another observer",
+      });
+    }
+
+    // ครบ 2 เครื่อง → ดึง observer
+    const [o1Raw, o2Raw] = await redis.lrange(key, 0, 1);
+    const o1 = JSON.parse(o1Raw);
+    const o2 = JSON.parse(o2Raw);
+
+    const drone = calculateDroneFromTwoObservers(o1, o2);
+
+    // ล้าง session (สำคัญ)
+    await redis.del(key);
+
+    return res.status(200).json({
+      status: "calculated",
+      drone,
+    });
+  } catch (err) {
+    console.error("❌ ERROR", err);
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+    });
+  }
+});
+
+// ================================
+// 5. START SERVER
+// ================================
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`)
-})
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+});
