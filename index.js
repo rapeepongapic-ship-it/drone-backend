@@ -35,11 +35,13 @@ function calculateDroneFromTwoObservers(o1, o2) {
 // 4. API ENDPOINT
 // ================================
 app.post("/calculate-drone", async (req, res) => {
-  console.log("📡 HIT /calculate-drone");
-  console.log("BODY =", req.body);
-
   try {
+    console.log("BODY =", req.body);
+
     const { sessionId, observer } = req.body;
+
+    // ❗ observer ต้องเป็น object
+    console.log("observer type =", typeof observer);
 
     if (!sessionId || !observer) {
       return res.status(400).json({
@@ -50,14 +52,14 @@ app.post("/calculate-drone", async (req, res) => {
 
     const key = `session:${sessionId}`;
 
-    // เก็บ observer
+    // ✅ stringify ตอนเก็บ
     await redis.rpush(key, JSON.stringify(observer));
 
-    // ดึง observer ทั้งหมด
+    // ✅ lrange จะได้ array ของ STRING
     const rawList = await redis.lrange(key, 0, -1);
     console.log("RAW FROM REDIS =", rawList);
 
-    // ยังไม่ครบ 2 เครื่อง
+    // ยังไม่ครบ 2
     if (rawList.length < 2) {
       return res.json({
         status: "waiting",
@@ -65,13 +67,12 @@ app.post("/calculate-drone", async (req, res) => {
       });
     }
 
-    // parse แค่ครั้งเดียว
+    // ✅ parse เฉพาะของที่มาจาก Redis
     const o1 = JSON.parse(rawList[0]);
     const o2 = JSON.parse(rawList[1]);
 
     const drone = calculateDroneFromTwoObservers(o1, o2);
 
-    // ล้าง session
     await redis.del(key);
 
     return res.json({
@@ -87,6 +88,7 @@ app.post("/calculate-drone", async (req, res) => {
     });
   }
 });
+
 
 // ================================
 // 5. START SERVER
