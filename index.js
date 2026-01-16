@@ -51,7 +51,8 @@ app.post("/calculate-drone", async (req, res) => {
     const key = `session:${sessionId}`;
 
     // ✅ แก้จุดที่ 1: เก็บ observer เป็น object ตรง ๆ
-    await redis.rpush(key, observer);
+    await redis.rpush(key, JSON.stringify(observer));
+
 
     const count = await redis.llen(key);
     console.log(`[${sessionId}] observers =`, count);
@@ -66,7 +67,9 @@ app.post("/calculate-drone", async (req, res) => {
     }
 
     // ครบ 2 เครื่อง → ดึง observer
-    const [o1, o2] = await redis.lrange(key, 0, 1);
+    const raw = await redis.lrange(key, 0, 1);
+    const o1 = JSON.parse(raw[0]);
+    const o2 = JSON.parse(raw[1]);
 
     const drone = calculateDroneFromTwoObservers(o1, o2);
 
