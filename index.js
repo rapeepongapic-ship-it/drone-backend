@@ -54,8 +54,31 @@ app.post("/calculate-drone", async (req, res) => {
     await redis.rpush(key, JSON.stringify(observer));
 
 
-    const count = await redis.llen(key);
-    console.log(`[${sessionId}] observers =`, count);
+    const rawList = await redis.lrange(key, 0, -1);
+
+    console.log("RAW FROM REDIS =", rawList);
+    console.log("RAW TYPE =", rawList.map(v => typeof v));
+
+    if (rawList.length < 2) {
+      return res.json({
+        status: "waiting",
+        message: "Waiting for another observer",
+      });
+    }
+
+    const observer1 = JSON.parse(rawList[0]);
+    const observer2 = JSON.parse(rawList[1]);
+
+
+    // ❗️ parse หลังจาก log เท่านั้น
+    const o1 = JSON.parse(raw[0]);
+    const o2 = JSON.parse(raw[1]);
+
+
+
+
+
+
 
     // ยังไม่ครบ 2 เครื่อง
     if (count < 2) {
@@ -67,9 +90,9 @@ app.post("/calculate-drone", async (req, res) => {
     }
 
     // ครบ 2 เครื่อง → ดึง observer
-    const raw = await redis.lrange(key, 0, 1);
-    const o1 = JSON.parse(raw[0]);
-    const o2 = JSON.parse(raw[1]);
+    // const raw = await redis.lrange(key, 0, 1);
+    // const o1 = JSON.parse(raw[0]);
+    // const o2 = JSON.parse(raw[1]);
 
     const drone = calculateDroneFromTwoObservers(o1, o2);
 
