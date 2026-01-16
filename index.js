@@ -137,7 +137,6 @@ app.post("/calculate-drone", async (req, res) => {
     console.log("BODY =", req.body);
 
     const { sessionId, observer } = req.body;
-
     if (!sessionId || !observer) {
       return res.status(400).json({
         status: "error",
@@ -147,13 +146,14 @@ app.post("/calculate-drone", async (req, res) => {
 
     const key = `session:${sessionId}`;
 
-    // ✅ เก็บเป็น string เท่านั้น
+    // ✅ เก็บเป็น JSON string
     await redis.rpush(key, JSON.stringify(observer));
 
-    // ✅ ดึงออกมา จะได้ string เสมอ
+    // ✅ ดึงออกมา
     const rawList = await redis.lrange(key, 0, -1);
     console.log("RAW FROM REDIS =", rawList);
 
+    // ✅ รอบแรก ต้องได้ waiting
     if (rawList.length < 2) {
       return res.json({
         status: "waiting",
@@ -161,12 +161,14 @@ app.post("/calculate-drone", async (req, res) => {
       });
     }
 
-    // ✅ parse จาก string เท่านั้น
-    const o1 = JSON.parse(rawList[0]);
-    const o2 = JSON.parse(rawList[1]);
+    // ✅ สำคัญที่สุด ❗
+    // ❌ ห้าม JSON.parse อีก
+    const o1 = rawList[0];
+    const o2 = rawList[1];
 
     const drone = calculateDroneFromTwoObservers(o1, o2);
 
+    // ล้าง session
     await redis.del(key);
 
     return res.json({
@@ -182,6 +184,7 @@ app.post("/calculate-drone", async (req, res) => {
     });
   }
 });
+
 
 // ================================
 // 5. START SERVER
