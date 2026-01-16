@@ -163,11 +163,11 @@ app.post("/calculate-drone", async (req, res) => {
 
     // ✅ สำคัญที่สุด ❗
     // ❌ ห้าม JSON.parse อีก
-    // const o1 = rawList[0];
-    // const o2 = rawList[1];
+    const o1 = rawList[0];
+    const o2 = rawList[1];
 
-    const o1 = JSON.parse(rawList[0])
-    const o2 = JSON.parse(rawList[1])
+    // const o1 = JSON.parse(rawList[0])
+    // const o2 = JSON.parse(rawList[1])
 
     const drone = calculateDroneFromTwoObservers(o1, o2);
 
